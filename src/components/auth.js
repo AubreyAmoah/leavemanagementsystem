@@ -1,29 +1,105 @@
-import { createUserWithEmailAndPassword, signInWithPopup } from "firebase/auth";
+import {
+  createUserWithEmailAndPassword,
+  signInWithEmailAndPassword,
+  signInWithPopup,
+} from "firebase/auth";
 import { useState } from "react";
-import { auth, googlProvider } from "../config/firebase.config";
+import { auth, db, googlProvider } from "../config/firebase.config";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
+import { faDoorOpen, faHouse } from "@fortawesome/free-solid-svg-icons";
+import toast, { Toaster } from "react-hot-toast";
+import { addDoc, collection, getDocs, query, where } from "firebase/firestore";
+import Loading from "./loading";
 
 export const Auth = () => {
+  const [isSignUpActive, setIsSignUpActive] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+
+  const userCollectionRef = collection(db, "users");
+
+  const signUp = async () => {
+    try {
+      setIsLoading(true);
+      const result = await createUserWithEmailAndPassword(
+        auth,
+        email,
+        password
+      );
+
+      if (result) {
+        const newUser = await addDoc(userCollectionRef, {
+          email: auth?.currentUser?.email,
+          name: "",
+          role: "employee",
+          phone: "",
+          userId: auth?.currentUser?.uid,
+        });
+
+        if (newUser) {
+          return toast.success("Sign Up Success");
+        }
+      }
+      console.log(result);
+    } catch (error) {
+      toast.error("An Error Occurred");
+      console.log(error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const signIn = async () => {
     try {
-      await createUserWithEmailAndPassword(auth, email, password);
+      setIsLoading(true);
+      const result = await signInWithEmailAndPassword(auth, email, password);
+      console.log(result);
+
+      toast.success("Sign Up Success");
     } catch (error) {
       console.log(error);
+      toast.error("An Error Occurred");
+      setIsLoading(false);
     }
+  };
+
+  const toggleSignUp = () => {
+    return setIsSignUpActive(!isSignUpActive);
   };
 
   const signInWithGoogle = async () => {
     try {
-      await signInWithPopup(auth, googlProvider);
+      const result = await signInWithPopup(auth, googlProvider);
+      if (result) {
+        const userEmail = auth?.currentUser?.email;
+        const q = query(userCollectionRef, where("email", "==", userEmail));
+        const querySnapshot = await getDocs(q);
+        if (querySnapshot.docs[0] === undefined) {
+          const newUser = await addDoc(userCollectionRef, {
+            email: auth?.currentUser?.email,
+            namme: auth?.currentUser?.displayName,
+            role: "employee",
+            phone: auth?.currentUser?.phoneNumber,
+            userId: auth?.currentUser?.uid,
+          });
+
+          if (newUser) {
+            return toast.success("Sign In Success");
+          }
+        }
+        return toast.success("Sign In Success");
+      }
     } catch (error) {
       console.log(error);
     }
   };
   return (
     <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 flex flex-col w-[400px] p-4 rounded-md shadow-md max-[460px]:w-screen">
-      <h1 className="p-4 w-full font-bold text-2xl text-zinc-50 bg-teal-600 mb-6">
+      {isLoading && <Loading />}
+      <Toaster />
+      <h1 className="p-4 w-full font-bold text-2xl text-zinc-50 bg-teal-600 mb-6 flex item-center justify-center text-center">
+        <FontAwesomeIcon className="mr-4" icon={faHouse} />
         REMOTOWN
       </h1>
       <input
@@ -38,19 +114,49 @@ export const Auth = () => {
         type="password"
         onChange={(e) => setPassword(e.target.value)}
       />
-      <button
-        className="w-full mb-4 rounded-sm bg-teal-600 text-zinc-50 border border-teal-600 p-4 hover:bg-zinc-50 hover:text-teal-600"
-        onClick={signIn}
-      >
-        Sign In
-      </button>
-      <button
-        className="flex text-center items-center justify-center w-full bg-red-500 text-zinc-50 rounded-sm border border-red-500 p-4 hover:bg-zinc-50 hover:text-red-500"
-        onClick={signInWithGoogle}
-      >
-        <FontAwesomeIcon icon="fa-brands fa-google" />
-        Sign In With Google
-      </button>
+      {isSignUpActive && (
+        <>
+          <button
+            className="w-full mb-4 rounded-sm bg-teal-600 text-zinc-50 border border-teal-600 p-4 hover:bg-zinc-50 hover:text-teal-600"
+            onClick={signUp}
+          >
+            <FontAwesomeIcon className="mr-4" icon={faDoorOpen} />
+            Sign Up
+          </button>
+          <button
+            className="flex text-center items-center justify-center w-full bg-red-500 text-zinc-50 rounded-sm border border-red-500 p-4 hover:bg-zinc-50 hover:text-red-500"
+            onClick={signInWithGoogle}
+          >
+            <FontAwesomeIcon className="mr-4" icon={faDoorOpen} />
+            Sign Up With Google
+          </button>
+          <button className="mt-4" onClick={toggleSignUp}>
+            Already have an account? Sign In
+          </button>
+        </>
+      )}
+
+      {!isSignUpActive && (
+        <>
+          <button
+            className="w-full mb-4 rounded-sm bg-teal-600 text-zinc-50 border border-teal-600 p-4 hover:bg-zinc-50 hover:text-teal-600"
+            onClick={signIn}
+          >
+            <FontAwesomeIcon className="mr-4" icon={faDoorOpen} />
+            Sign In
+          </button>
+          <button
+            className="flex text-center items-center justify-center w-full bg-red-500 text-zinc-50 rounded-sm border border-red-500 p-4 hover:bg-zinc-50 hover:text-red-500"
+            onClick={signInWithGoogle}
+          >
+            <FontAwesomeIcon className="mr-4" icon={faDoorOpen} />
+            Sign In With Google
+          </button>
+          <button className="mt-4" onClick={toggleSignUp}>
+            Don't have an account? Sign Up
+          </button>
+        </>
+      )}
     </div>
   );
 };
