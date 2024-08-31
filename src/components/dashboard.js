@@ -17,29 +17,84 @@ import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import {
   faBell,
   faDoorClosed,
-  faEdit,
-  faPerson,
   faTools,
-  faTrash,
 } from "@fortawesome/free-solid-svg-icons";
+import Notifications from "./notifications";
+import Profile from "./profile";
 
 const Dashboard = () => {
+  /** Date Use States */
+  // use state for current system date
+  const [currentDate, setCurrentDate] = useState(null);
+
+  //use state for maximum date of start date
+  const [maxDate, setMaxDate] = useState(null);
+
+  //use state for minimum date for end date
+  const [minStartDate, setMinStartDate] = useState(null);
+
+  //use state for selected date for start date
+  const [selectedDate, setSelectedDate] = useState(null);
+
+  //use state for active state for end date
+  const [isEndDateInputActive, setIsEndInputActive] = useState(false);
+
+  // use state for maximum date of end date
+  const [maxDateAfter, setMaxDateAfter] = useState(null);
+
+  //use state for selected date for end date
+  const [selectedEndDate, setSelectedEndDate] = useState(null);
+  /** End of Date Use states */
+
   const [isAdmin, setAdmin] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [isEdit, setIsEdit] = useState(false);
   const [leaveList, setLeaveList] = useState([]);
   const [personalLeaveList, setPersonalLeaveList] = useState([]);
   const [newLeave, setLeave] = useState({
     reason: "",
-    duration: 0,
     approved: false,
     applicationDate: serverTimestamp(),
-    approvalDate: serverTimestamp(),
+    startDate: serverTimestamp(selectedDate) || null,
+    endDate: serverTimestamp(selectedEndDate) || null,
+    approvalDate: null,
   });
   const [updatedReason, setUpdatedReason] = useState("");
+
+  const [notificationVisibility, setNotificationVisibility] = useState(false);
+  const [profileVisibility, setProfileVisibility] = useState(false);
   const [updatedDuration, setUpdatedDuration] = useState(0);
 
+  /** Collection Refs */
   const leaveCollectionRef = collection(db, "leaveRequest");
   const userCollectionRef = collection(db, "users");
+  /**End */
+
+  /** Date functionalities */
+  // calculate for current date, convert to iso string
+  const now = new Date(Date.now());
+  const formattedDate = now.toISOString().slice(0, 16);
+
+  // Calculate maximum date allowed by adding 30 days to currentdate
+  const max = new Date(now.setDate(now.getDate() + 30));
+  const formattedMaxDate = max.toISOString().slice(0, 16);
+
+  // Add one day to current date, convert to iso string and set to MinStartDate useState
+  const changeEndDateStartDate = (selectedDate) => {
+    if (selectedDate !== undefined) {
+      const newDate = new Date(selectedDate);
+      const futureNow = new Date(newDate.setDate(newDate.getDate() + 1));
+      const formattedFutureNowDate = futureNow.toISOString().slice(0, 16);
+
+      setMinStartDate(formattedFutureNowDate);
+
+      const max = new Date(newDate.setDate(newDate.getDate() + 60));
+      const formattedMaxDate = max.toISOString().slice(0, 16);
+      setMaxDateAfter(formattedMaxDate);
+    }
+  };
+
+  /**End  */
 
   const getLeaveList = async () => {
     try {
@@ -70,14 +125,12 @@ const Dashboard = () => {
       const querySnapshot = await getDocs(q);
       const filteredData = querySnapshot.docs.map((doc) => ({
         reason: doc.data().reason,
-        duration: doc.data().duration,
         approved: doc.data().approved,
-        applicationDate: doc.data().applicationDate.toDate(),
-        approvalDate: doc.data().approvalDate.toDate(),
+        applicationDate: doc.data().applicationDate.toDate() || "N/A",
+        approvalDate: doc.data().approvalDate.toDate() || "N/A",
         id: doc.id,
       }));
       setPersonalLeaveList(filteredData);
-      console.log(filteredData);
     } catch (error) {
       console.log(error);
     } finally {
@@ -99,7 +152,27 @@ const Dashboard = () => {
     return;
   };
 
+  const toggleNotification = () => {
+    setNotificationVisibility(!notificationVisibility);
+    setProfileVisibility(false);
+  };
+
+  const toggleProfile = () => {
+    setProfileVisibility(!profileVisibility);
+    setNotificationVisibility(false);
+  };
+
   useEffect(() => {
+    setCurrentDate(formattedDate);
+
+    setMaxDate(formattedMaxDate);
+
+    // const futureMax = new Date(max.setDate(max.getDate() + 30));
+    // const formattedFutureMaxDate = futureMax.toISOString().slice(0, 16);
+    // setMaxDateAfter(formattedFutureMaxDate);
+
+    changeEndDateStartDate();
+
     verifyIsAdmin();
     if (isAdmin) {
       getLeaveList();
@@ -108,20 +181,20 @@ const Dashboard = () => {
     }
 
     // localStorage.setItem("leaveData", JSON.stringify(newLeave));
-  }, []);
+  }, [isAdmin]);
 
   const onSubmitLeaveRequests = async () => {
     try {
       setIsLoading(true);
       await addDoc(leaveCollectionRef, {
-        reason: newLeave.reason,
-        duration: newLeave.duration,
-        approved: true,
-        applicationDate: newLeave.applicationDate,
-        approvalDate: newLeave.approvalDate,
+        ...newLeave,
         userId: auth?.currentUser?.uid,
       });
-      getLeaveList();
+      if (isAdmin) {
+        getLeaveList();
+      } else {
+        getLeaveListByUserId();
+      }
     } catch (error) {
       console.error(error);
     } finally {
@@ -164,16 +237,30 @@ const Dashboard = () => {
       setIsLoading(false);
     }
   };
-  return (
-    <div>
-      {isLoading === true && <Loading />}
 
+  useEffect(() => {
+    changeEndDateStartDate(selectedDate);
+  }, [changeEndDateStartDate]);
+  return (
+    <div className="relative">
+      {isLoading === true && <Loading />}
+      <Notifications visible={notificationVisibility} />
+      <Profile
+        visible={profileVisibility}
+        query={query}
+        userCollectionRef={userCollectionRef}
+        where={where}
+        getDocs={getDocs}
+      />
       <nav className="flex w-full h-[50px] justify-end bg-teal-600 items-center">
-        <button className="text-zinc-50 mr-6 font-bold">
+        <button
+          onClick={toggleNotification}
+          className="text-zinc-50 mr-6 font-bold relative"
+        >
           <FontAwesomeIcon className="mr-2" icon={faBell} />
           <span className="max-[460px]:hidden">Notifications</span>
         </button>
-        <button className="text-zinc-50 mr-6 font-bold">
+        <button onClick={toggleProfile} className="text-zinc-50 mr-6 font-bold">
           <FontAwesomeIcon className="mr-2" icon={faTools} />
           <span className="max-[460px]:hidden">Setting</span>
         </button>
@@ -194,14 +281,28 @@ const Dashboard = () => {
                 setLeave({ ...newLeave, reason: e.target.value })
               }
             />
+            <label htmlFor="timestart">Start Date: </label>
             <input
+              id="timestart"
               className="p-4 rounded-md outline-none caret-teal-500 text-teal-500 border border-zinc-300 mb-4 focus:border-teal-600 mr-6"
-              type="number"
-              min={0}
-              placeholder="Number of days on leave"
-              onChange={(e) =>
-                setLeave({ ...newLeave, duration: Number(e.target.value) })
-              }
+              type="datetime-local"
+              min={currentDate}
+              max={maxDate}
+              onChange={(e) => {
+                setSelectedDate(e.target.value);
+                setIsEndInputActive(true);
+              }}
+            />
+
+            <label htmlFor="timeend">End Date: </label>
+            <input
+              id="timeend"
+              className="p-4 rounded-md outline-none caret-teal-500 text-teal-500 border border-zinc-300 mb-4 focus:border-teal-600 mr-6"
+              type="datetime-local"
+              min={minStartDate}
+              max={maxDateAfter}
+              disabled={isEndDateInputActive ? false : true}
+              onChange={(e) => setSelectedEndDate(e.target.value)}
             />
             <button
               className="mb-4 rounded-sm bg-teal-600 text-zinc-50 border border-teal-600 p-4 hover:bg-zinc-50 hover:text-teal-600"
@@ -212,6 +313,15 @@ const Dashboard = () => {
           </div>
         </>
       )}
+
+      <div className="flex max-w-full overflow-auto bg-stone-300 shadow-md mb-4 items-center justify-between p-4">
+        <p className="w-[20%]">Reason</p>
+        <p className="w-[5%]">Approved</p>
+        <p className="w-[5%]">Duration</p>
+        <p className="w-[15%]">Date Applied</p>
+        <p className="w-[15%]">Date Approved</p>
+        <p className="w-[15%]">Date End</p>
+      </div>
 
       <div>
         {isAdmin &&
@@ -262,12 +372,11 @@ const Dashboard = () => {
               <h1
                 className={`${
                   leave.approved === true ? "text-green-600" : "text-red-600"
-                }`}
+                } w-[20%] break-all`}
               >
                 {leave.reason}
               </h1>
-              <p>
-                Approved :{" "}
+              <p className="w-[5%]">
                 <span
                   className={`${
                     leave.approved === true
@@ -278,29 +387,8 @@ const Dashboard = () => {
                   {leave.approved === true ? "yes" : "no"}
                 </span>
               </p>
-              <p>Duration {leave.duration}</p>
-              <p>Application Date: {leave.approvalDate.toGMTString()}</p>
-              <p>Approval Date: {leave.approvalDate.toGMTString()}</p>
-              <button
-                className="text-red-500"
-                onClick={() => deleteLeaveRequests(leave.id)}
-              >
-                <FontAwesomeIcon icon={faTrash} />
-              </button>
-              <button className="text-teal-600">
-                <FontAwesomeIcon icon={faEdit} />
-              </button>
-              <div className="hidden flex flex-col">
-                <input
-                  className=""
-                  type="text"
-                  placeholder="new reason..."
-                  onChange={(e) => setUpdatedReason(e.target.value)}
-                />
-                <button onClick={() => updateLeaveReason(leave.id)}>
-                  Update Reason
-                </button>
-              </div>
+              <p className="w-[5%]">{leave.duration}</p>
+              <p className="w-[15%]">{leave.approvalDate.toGMTString()}</p>
             </div>
           ))}
       </div>
