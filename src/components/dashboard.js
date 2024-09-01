@@ -63,11 +63,13 @@ const Dashboard = () => {
 
   const [notificationVisibility, setNotificationVisibility] = useState(false);
   const [profileVisibility, setProfileVisibility] = useState(false);
+  const [totalNotifications, setTotalNotifications] = useState(0);
   const [updatedDuration, setUpdatedDuration] = useState(0);
 
   /** Collection Refs */
-  const leaveCollectionRef = collection(db, "leaveRequest");
+  const leaveCollectionRef = collection(db, "leaveRequests");
   const userCollectionRef = collection(db, "users");
+  const notificationCollectionRef = collection(db, "notifications");
   /**End */
 
   /** Date functionalities */
@@ -162,7 +164,27 @@ const Dashboard = () => {
     setNotificationVisibility(false);
   };
 
+  const getTotalUnreadNotifications = async () => {
+    const userId = auth?.currentUser?.uid;
+    try {
+      const q = query(
+        notificationCollectionRef,
+        where("userId", "==", userId),
+        where("read", "==", false)
+      );
+      const querySnapshot = await getDocs(q);
+
+      const totalData = Number(querySnapshot.docs.length);
+
+      setTotalNotifications(totalData);
+    } catch (error) {
+      console.error(error);
+    } finally {
+    }
+  };
+
   useEffect(() => {
+    getTotalUnreadNotifications();
     setCurrentDate(formattedDate);
 
     setMaxDate(formattedMaxDate);
@@ -244,13 +266,26 @@ const Dashboard = () => {
   return (
     <div className="relative">
       {isLoading === true && <Loading />}
-      <Notifications visible={notificationVisibility} />
+      <Notifications
+        visible={notificationVisibility}
+        query={query}
+        notificationCollectionRef={notificationCollectionRef}
+        where={where}
+        getDocs={getDocs}
+        auth={auth}
+        updateDoc={updateDoc}
+        doc={doc}
+        getTotalUnreadNotifications={getTotalUnreadNotifications}
+      />
       <Profile
         visible={profileVisibility}
         query={query}
         userCollectionRef={userCollectionRef}
         where={where}
         getDocs={getDocs}
+        auth={auth}
+        updateDoc={updateDoc}
+        doc={doc}
       />
       <nav className="flex w-full h-[50px] justify-end bg-teal-600 items-center">
         <button
@@ -259,6 +294,15 @@ const Dashboard = () => {
         >
           <FontAwesomeIcon className="mr-2" icon={faBell} />
           <span className="max-[460px]:hidden">Notifications</span>
+          <div
+            className={
+              totalNotifications > 0
+                ? "absolute left-[-10px] top-[-10px] bg-slate-50 text-teal-600 rounded-sm w-[10px] h-[10px] text-[12px] p-2 flex items-center justify-center"
+                : "hidden"
+            }
+          >
+            {totalNotifications}
+          </div>
         </button>
         <button onClick={toggleProfile} className="text-zinc-50 mr-6 font-bold">
           <FontAwesomeIcon className="mr-2" icon={faTools} />
@@ -272,9 +316,9 @@ const Dashboard = () => {
 
       {!isAdmin && (
         <>
-          <div className=" ml-auto mr-auto text-center mt-4">
+          <div className="flex items-center justify-center flex-wrap mt-4 max-[990px]:flex-col">
             <input
-              className="p-4 rounded-md outline-none caret-teal-500 text-teal-500 border border-zinc-300 mb-4 focus:border-teal-600 mr-6"
+              className="p-4 rounded-md outline-none caret-teal-500 text-teal-500 border border-zinc-300 mb-4 focus:border-teal-600 mr-6 max-[700px]:w-full"
               type="text"
               placeholder="Leave Reason"
               onChange={(e) =>
@@ -284,7 +328,7 @@ const Dashboard = () => {
             <label htmlFor="timestart">Start Date: </label>
             <input
               id="timestart"
-              className="p-4 rounded-md outline-none caret-teal-500 text-teal-500 border border-zinc-300 mb-4 focus:border-teal-600 mr-6"
+              className="p-4 rounded-md outline-none caret-teal-500 text-teal-500 border border-zinc-300 ml-2 mb-4 focus:border-teal-600 mr-6 max-[700px]:w-full"
               type="datetime-local"
               min={currentDate}
               max={maxDate}
@@ -297,7 +341,7 @@ const Dashboard = () => {
             <label htmlFor="timeend">End Date: </label>
             <input
               id="timeend"
-              className="p-4 rounded-md outline-none caret-teal-500 text-teal-500 border border-zinc-300 mb-4 focus:border-teal-600 mr-6"
+              className="p-4 rounded-md outline-none caret-teal-500 text-teal-500 border border-zinc-300 ml-2 mb-4 focus:border-teal-600 mr-6 max-[700px]:w-full"
               type="datetime-local"
               min={minStartDate}
               max={maxDateAfter}
@@ -305,7 +349,7 @@ const Dashboard = () => {
               onChange={(e) => setSelectedEndDate(e.target.value)}
             />
             <button
-              className="mb-4 rounded-sm bg-teal-600 text-zinc-50 border border-teal-600 p-4 hover:bg-zinc-50 hover:text-teal-600"
+              className="mb-4 rounded-sm bg-teal-600 text-zinc-50 border border-teal-600 p-4 hover:bg-zinc-50 hover:text-teal-600 max-[300px]:w-full"
               onClick={onSubmitLeaveRequests}
             >
               Submit Leave Request

@@ -8,7 +8,14 @@ import { auth, db, googlProvider } from "../config/firebase.config";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faDoorOpen, faHouse } from "@fortawesome/free-solid-svg-icons";
 import toast, { Toaster } from "react-hot-toast";
-import { addDoc, collection, getDocs, query, where } from "firebase/firestore";
+import {
+  addDoc,
+  collection,
+  getDocs,
+  query,
+  serverTimestamp,
+  where,
+} from "firebase/firestore";
 import Loading from "./loading";
 
 export const Auth = () => {
@@ -18,6 +25,10 @@ export const Auth = () => {
   const [password, setPassword] = useState("");
 
   const userCollectionRef = collection(db, "users");
+  const notificationCollectionRef = collection(db, "notifications");
+
+  const myDate = new Date(Date.now());
+  const currentDate = String(myDate.toUTCString());
 
   const signUp = async () => {
     try {
@@ -32,12 +43,19 @@ export const Auth = () => {
         const newUser = await addDoc(userCollectionRef, {
           email: auth?.currentUser?.email,
           name: "",
-          role: "employee",
+          role: "staff",
           phone: "",
           userId: auth?.currentUser?.uid,
         });
 
         if (newUser) {
+          await addDoc(notificationCollectionRef, {
+            message: "Congratulations on creating your account",
+            created: serverTimestamp(),
+            read: false,
+            timeRead: null,
+            userId: auth?.currentUser?.uid,
+          });
           return toast.success("Sign Up Success");
         }
       }
@@ -54,9 +72,25 @@ export const Auth = () => {
     try {
       setIsLoading(true);
       const result = await signInWithEmailAndPassword(auth, email, password);
-      console.log(result);
+      if (result) {
+        await addDoc(notificationCollectionRef, {
+          message: `new login on ${currentDate}`,
+          created: serverTimestamp(),
+          read: false,
+          timeRead: null,
+          userId: auth?.currentUser?.uid,
+        });
 
-      toast.success("Sign Up Success");
+        await addDoc(notificationCollectionRef, {
+          message: `new login on ${currentDate}`,
+          created: serverTimestamp(),
+          read: false,
+          timeRead: null,
+          userId: auth?.currentUser?.uid,
+        });
+
+        toast.success("Sign Up Success");
+      }
     } catch (error) {
       console.log(error);
       toast.error("An Error Occurred");
@@ -78,13 +112,43 @@ export const Auth = () => {
         if (querySnapshot.docs[0] === undefined) {
           const newUser = await addDoc(userCollectionRef, {
             email: auth?.currentUser?.email,
-            namme: auth?.currentUser?.displayName,
+            name: auth?.currentUser?.displayName,
             role: "employee",
             phone: auth?.currentUser?.phoneNumber,
             userId: auth?.currentUser?.uid,
           });
 
           if (newUser) {
+            const q = query(
+              notificationCollectionRef,
+              where("userId", "==", auth?.currentUser?.uid)
+            );
+            const querySnapshot = await getDocs(q);
+            if (querySnapshot.docs[0] === undefined) {
+              try {
+                await addDoc(notificationCollectionRef, {
+                  message: "Congratulations on creating your account",
+                  created: serverTimestamp(),
+                  read: false,
+                  timeRead: null,
+                  userId: auth?.currentUser?.uid,
+                });
+              } catch (error) {
+                console.error(error);
+              }
+            }
+
+            try {
+              await addDoc(notificationCollectionRef, {
+                message: `new login on ${currentDate}`,
+                created: serverTimestamp(),
+                read: false,
+                timeRead: null,
+                userId: auth?.currentUser?.uid,
+              });
+            } catch (error) {
+              console.error(error);
+            }
             return toast.success("Sign In Success");
           }
         }
