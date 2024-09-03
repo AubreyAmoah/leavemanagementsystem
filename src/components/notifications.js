@@ -1,6 +1,6 @@
 import { faEnvelope, faEnvelopeOpen } from "@fortawesome/free-solid-svg-icons";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 
 const Notifications = ({
   visible,
@@ -11,33 +11,10 @@ const Notifications = ({
   auth,
   updateDoc,
   doc,
+  notificationList,
+  getNotificationList,
   getTotalUnreadNotifications,
 }) => {
-  const [notificationList, setNotificationList] = useState([]);
-
-  const userId = auth?.currentUser?.uid;
-
-  const getNotificationList = async () => {
-    try {
-      const q = query(notificationCollectionRef, where("userId", "==", userId));
-      const querySnapshot = await getDocs(q);
-
-      const filteredData = querySnapshot.docs.map((doc) => ({
-        created: doc.data().created.toDate(),
-        message: doc.data().message,
-        read: doc.data().read,
-        timeRead: doc.data().timeRead,
-        userId: doc.data().userId,
-        id: doc.id,
-      }));
-
-      setNotificationList(filteredData);
-    } catch (error) {
-      console.error(error);
-    } finally {
-    }
-  };
-
   const readNotification = async (id) => {
     try {
       const notification = doc(notificationCollectionRef, id);
@@ -49,8 +26,8 @@ const Notifications = ({
     }
   };
 
-  useState(() => {
-    getNotificationList();
+  useEffect(() => {
+    if (visible) getNotificationList();
   });
   return (
     <div

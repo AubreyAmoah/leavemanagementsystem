@@ -2,11 +2,14 @@ import React, { useEffect, useState } from "react";
 import { auth, db } from "../config/firebase.config";
 import { signOut } from "firebase/auth";
 import {
+  Timestamp,
   addDoc,
   collection,
   deleteDoc,
   doc,
+  getDoc,
   getDocs,
+  orderBy,
   query,
   serverTimestamp,
   updateDoc,
@@ -16,11 +19,13 @@ import Loading from "./loading";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import {
   faBell,
+  faCancel,
   faDoorClosed,
   faTools,
 } from "@fortawesome/free-solid-svg-icons";
 import Notifications from "./notifications";
 import Profile from "./profile";
+import toast from "react-hot-toast";
 
 const Dashboard = () => {
   /** Date Use States */
@@ -33,21 +38,17 @@ const Dashboard = () => {
   //use state for minimum date for end date
   const [minStartDate, setMinStartDate] = useState(null);
 
-  //use state for selected date for start date
-  const [selectedDate, setSelectedDate] = useState(null);
-
   //use state for active state for end date
   const [isEndDateInputActive, setIsEndInputActive] = useState(false);
 
   // use state for maximum date of end date
   const [maxDateAfter, setMaxDateAfter] = useState(null);
 
-  //use state for selected date for end date
-  const [selectedEndDate, setSelectedEndDate] = useState(null);
   /** End of Date Use states */
 
   const [isAdmin, setAdmin] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [isButtonLoading, setIsButtonLoading] = useState(false);
   const [isEdit, setIsEdit] = useState(false);
   const [leaveList, setLeaveList] = useState([]);
   const [personalLeaveList, setPersonalLeaveList] = useState([]);
@@ -55,14 +56,22 @@ const Dashboard = () => {
     reason: "",
     approved: false,
     applicationDate: serverTimestamp(),
-    startDate: serverTimestamp(selectedDate) || null,
-    endDate: serverTimestamp(selectedEndDate) || null,
+    startDate: null,
+    endDate: null,
     approvalDate: null,
+    cancelled: false,
+  });
+
+  const [cancelledLeave, setCancelledLeave] = useState({
+    leaveId: "",
+    dateCancelled: "",
+    daysLeft: "",
   });
   const [updatedReason, setUpdatedReason] = useState("");
 
   const [notificationVisibility, setNotificationVisibility] = useState(false);
   const [profileVisibility, setProfileVisibility] = useState(false);
+  const [notificationList, setNotificationList] = useState([]);
   const [totalNotifications, setTotalNotifications] = useState(0);
   const [updatedDuration, setUpdatedDuration] = useState(0);
 
@@ -98,45 +107,95 @@ const Dashboard = () => {
 
   /**End  */
 
-  const getLeaveList = async () => {
+  const emptyFunction = () => {
+    return;
+  };
+
+  const calculateLeaveDuration = async (id) => {
     try {
-      setIsLoading(true);
-      const data = await getDocs(leaveCollectionRef);
-      const filteredData = data.docs.map((doc) => ({
-        //   ...doc.data(),
-        reason: doc.data().reason,
-        duration: doc.data().duration,
-        approved: doc.data().approved,
-        applicationDate: doc.data().applicationDate.toDate(),
-        approvalDate: doc.data().approvalDate.toDate(),
-        id: doc.id,
-      }));
-      setLeaveList(filteredData);
+      const leaveDocRef = doc(leaveCollectionRef, id);
+
+      const docSnap = await getDoc(leaveDocRef);
+
+      if (docSnap.exists()) {
+        const startDate = docSnap.data().startDate.toDate();
+        const endDate = docSnap.data().endDate.toDate();
+
+        let Difference_In_Time = endDate.getTime() - startDate.getTime();
+
+        let Difference_In_Days = Math.round(
+          Difference_In_Time / (1000 * 3600 * 24)
+        );
+        return Difference_In_Days;
+      }
     } catch (error) {
       console.error(error);
-    } finally {
-      setIsLoading(false);
     }
   };
 
   const getLeaveListByUserId = async () => {
     try {
-      setIsLoading(true);
       const userId = auth?.currentUser?.uid;
-      const q = query(leaveCollectionRef, where("userId", "==", userId));
+      const q = query(
+        leaveCollectionRef,
+        where("userId", "==", userId),
+        where("cancelled", "==", false),
+        orderBy("applicationDate", "desc")
+      );
       const querySnapshot = await getDocs(q);
       const filteredData = querySnapshot.docs.map((doc) => ({
         reason: doc.data().reason,
         approved: doc.data().approved,
-        applicationDate: doc.data().applicationDate.toDate() || "N/A",
-        approvalDate: doc.data().approvalDate.toDate() || "N/A",
+        applicationDate:
+          doc.data().applicationDate !== null || ""
+            ? doc.data().applicationDate.toDate()
+            : doc.data().applicationDate,
+        approvalDate:
+          doc.data().approvalDate !== null || ""
+            ? doc.data().approvalDate.toDate()
+            : doc.data().approvalDate,
+        startDate:
+          doc.data().startDate !== null || ""
+            ? doc.data().startDate.toDate()
+            : doc.data().startDate,
+        endDate:
+          doc.data().endDate !== null || ""
+            ? doc.data().endDate.toDate()
+            : doc.data().endDate,
+        duration() {
+          const startDate = doc.data().startDate.toDate();
+          const endDate = doc.data().endDate.toDate();
+
+          let Difference_In_Time = endDate.getTime() - startDate.getTime();
+
+          let Difference_In_Days = Math.round(
+            Difference_In_Time / (1000 * 3600 * 24)
+          );
+          return Difference_In_Days;
+        },
+        daysLeft() {
+          const startDate = doc.data().startDate.toDate();
+          const current = Timestamp.now().toDate();
+          const endDate = doc.data().endDate.toDate();
+
+          if (startDate <= current) {
+            let Difference_In_Time = endDate.getTime() - current.getTime();
+
+            let Difference_In_Days = Math.round(
+              Difference_In_Time / (1000 * 3600 * 24)
+            );
+            return Difference_In_Days + " days";
+          }
+
+          return "Not started yet";
+        },
         id: doc.id,
       }));
-      setPersonalLeaveList(filteredData);
+
+      return setPersonalLeaveList(filteredData);
     } catch (error) {
       console.log(error);
     } finally {
-      setIsLoading(false);
     }
   };
 
@@ -164,6 +223,32 @@ const Dashboard = () => {
     setNotificationVisibility(false);
   };
 
+  const getNotificationList = async () => {
+    const userId = auth?.currentUser?.uid;
+    try {
+      const q = query(
+        notificationCollectionRef,
+        where("userId", "==", userId),
+        orderBy("created", "desc")
+      );
+      const querySnapshot = await getDocs(q);
+
+      const filteredData = querySnapshot.docs.map((doc) => ({
+        created: doc.data().created.toDate(),
+        message: doc.data().message,
+        read: doc.data().read,
+        timeRead: doc.data().timeRead,
+        userId: doc.data().userId,
+        id: doc.id,
+      }));
+
+      setNotificationList(filteredData);
+    } catch (error) {
+      console.error(error);
+    } finally {
+    }
+  };
+
   const getTotalUnreadNotifications = async () => {
     const userId = auth?.currentUser?.uid;
     try {
@@ -183,44 +268,23 @@ const Dashboard = () => {
     }
   };
 
-  useEffect(() => {
-    getTotalUnreadNotifications();
-    setCurrentDate(formattedDate);
-
-    setMaxDate(formattedMaxDate);
-
-    // const futureMax = new Date(max.setDate(max.getDate() + 30));
-    // const formattedFutureMaxDate = futureMax.toISOString().slice(0, 16);
-    // setMaxDateAfter(formattedFutureMaxDate);
-
-    changeEndDateStartDate();
-
-    verifyIsAdmin();
-    if (isAdmin) {
-      getLeaveList();
-    } else {
-      getLeaveListByUserId();
-    }
-
-    // localStorage.setItem("leaveData", JSON.stringify(newLeave));
-  }, [isAdmin]);
-
   const onSubmitLeaveRequests = async () => {
     try {
-      setIsLoading(true);
-      await addDoc(leaveCollectionRef, {
+      setIsButtonLoading(true);
+      const result = await addDoc(leaveCollectionRef, {
         ...newLeave,
+        startDate: Timestamp.fromDate(new Date(newLeave.startDate)),
+        endDate: Timestamp.fromDate(new Date(newLeave.endDate)),
         userId: auth?.currentUser?.uid,
       });
-      if (isAdmin) {
-        getLeaveList();
-      } else {
+      if (result) {
         getLeaveListByUserId();
+        return toast.success("Leave Request submitted");
       }
     } catch (error) {
       console.error(error);
     } finally {
-      setIsLoading(false);
+      setIsButtonLoading(false);
     }
   };
 
@@ -229,7 +293,6 @@ const Dashboard = () => {
       setIsLoading(true);
       const leaveDoc = doc(db, "leaveRequest", id);
       await deleteDoc(leaveDoc);
-      getLeaveList();
     } catch (error) {
       console.error(error);
     } finally {
@@ -242,13 +305,13 @@ const Dashboard = () => {
       setIsLoading(true);
       const leaveDoc = doc(db, "leaveRequest", id);
       await updateDoc(leaveDoc, { reason: updatedReason });
-      getLeaveList();
     } catch (error) {
       console.error(error);
     } finally {
       setIsLoading(false);
     }
   };
+
   const logout = async () => {
     try {
       setIsLoading(true);
@@ -261,7 +324,22 @@ const Dashboard = () => {
   };
 
   useEffect(() => {
-    changeEndDateStartDate(selectedDate);
+    getNotificationList();
+    getTotalUnreadNotifications();
+    setCurrentDate(formattedDate);
+
+    setMaxDate(formattedMaxDate);
+
+    // const futureMax = new Date(max.setDate(max.getDate() + 30));
+    // const formattedFutureMaxDate = futureMax.toISOString().slice(0, 16);
+    // setMaxDateAfter(formattedFutureMaxDate);
+
+    changeEndDateStartDate();
+    getLeaveListByUserId();
+
+    // localStorage.setItem("leaveData", JSON.stringify(newLeave));
+
+    changeEndDateStartDate(newLeave.startDate);
   }, [changeEndDateStartDate]);
   return (
     <div className="relative">
@@ -275,6 +353,8 @@ const Dashboard = () => {
         auth={auth}
         updateDoc={updateDoc}
         doc={doc}
+        notificationList={notificationList}
+        getNotificationList={getNotificationList}
         getTotalUnreadNotifications={getTotalUnreadNotifications}
       />
       <Profile
@@ -314,127 +394,142 @@ const Dashboard = () => {
         </button>
       </nav>
 
-      {!isAdmin && (
-        <>
-          <div className="flex items-center justify-center flex-wrap mt-4 max-[990px]:flex-col">
-            <input
-              className="p-4 rounded-md outline-none caret-teal-500 text-teal-500 border border-zinc-300 mb-4 focus:border-teal-600 mr-6 max-[700px]:w-full"
-              type="text"
-              placeholder="Leave Reason"
-              onChange={(e) =>
-                setLeave({ ...newLeave, reason: e.target.value })
-              }
-            />
-            <label htmlFor="timestart">Start Date: </label>
-            <input
-              id="timestart"
-              className="p-4 rounded-md outline-none caret-teal-500 text-teal-500 border border-zinc-300 ml-2 mb-4 focus:border-teal-600 mr-6 max-[700px]:w-full"
-              type="datetime-local"
-              min={currentDate}
-              max={maxDate}
-              onChange={(e) => {
-                setSelectedDate(e.target.value);
-                setIsEndInputActive(true);
-              }}
-            />
+      <>
+        <div className="flex items-center justify-center flex-wrap mt-4 max-[990px]:flex-col">
+          <input
+            className="p-4 rounded-md outline-none caret-teal-500 text-teal-500 border border-zinc-300 mb-4 focus:border-teal-600 mr-6 max-[700px]:w-full"
+            type="text"
+            placeholder="Leave Reason"
+            onChange={(e) => setLeave({ ...newLeave, reason: e.target.value })}
+          />
+          <label htmlFor="timestart">Start Date: </label>
+          <input
+            id="timestart"
+            className="p-4 rounded-md outline-none caret-teal-500 text-teal-500 border border-zinc-300 ml-2 mb-4 focus:border-teal-600 mr-6 max-[700px]:w-full"
+            type="datetime-local"
+            min={currentDate}
+            max={maxDate}
+            onChange={(e) => {
+              setLeave({ ...newLeave, startDate: e.target.value });
+              setIsEndInputActive(true);
+            }}
+          />
 
-            <label htmlFor="timeend">End Date: </label>
-            <input
-              id="timeend"
-              className="p-4 rounded-md outline-none caret-teal-500 text-teal-500 border border-zinc-300 ml-2 mb-4 focus:border-teal-600 mr-6 max-[700px]:w-full"
-              type="datetime-local"
-              min={minStartDate}
-              max={maxDateAfter}
-              disabled={isEndDateInputActive ? false : true}
-              onChange={(e) => setSelectedEndDate(e.target.value)}
-            />
-            <button
-              className="mb-4 rounded-sm bg-teal-600 text-zinc-50 border border-teal-600 p-4 hover:bg-zinc-50 hover:text-teal-600 max-[300px]:w-full"
-              onClick={onSubmitLeaveRequests}
-            >
-              Submit Leave Request
-            </button>
-          </div>
-        </>
-      )}
+          <label htmlFor="timeend">End Date: </label>
+          <input
+            id="timeend"
+            className="p-4 rounded-md outline-none caret-teal-500 text-teal-500 border border-zinc-300 ml-2 mb-4 focus:border-teal-600 mr-6 max-[700px]:w-full"
+            type="datetime-local"
+            min={minStartDate}
+            max={maxDateAfter}
+            disabled={isEndDateInputActive ? false : true}
+            onChange={(e) => {
+              setLeave({ ...newLeave, endDate: e.target.value });
+            }}
+          />
+          <button
+            className={`${
+              isButtonLoading
+                ? "cursor-not-allowed bg-stone-400 text-teal-600"
+                : " bg-teal-600 text-zinc-50 border border-teal-600 hover:bg-zinc-50 hover:text-teal-600"
+            } mb-4 rounded-sm p-4 max-[300px]:w-full`}
+            onClick={isButtonLoading ? emptyFunction : onSubmitLeaveRequests}
+          >
+            {isButtonLoading ? "Submitting" : "Submit Leave Request"}
+          </button>
+        </div>
+      </>
 
-      <div className="flex max-w-full overflow-auto bg-stone-300 shadow-md mb-4 items-center justify-between p-4">
-        <p className="w-[20%]">Reason</p>
-        <p className="w-[5%]">Approved</p>
-        <p className="w-[5%]">Duration</p>
-        <p className="w-[15%]">Date Applied</p>
-        <p className="w-[15%]">Date Approved</p>
-        <p className="w-[15%]">Date End</p>
-      </div>
-
-      <div>
-        {isAdmin &&
-          leaveList.map((leave) => (
-            <div key={leave.id}>
-              <h1
-                className={`${
-                  leave.approved === true ? "text-green-600" : "text-red-600"
-                }`}
+      <div className="overflow-x-auto">
+        <table className="min-w-full bg-white border border-gray-300">
+          <thead>
+            <tr className="bg-gray-200 text-gray-600 uppercase text-sm leading-normal">
+              <th className="py-3 px-6 text-left">Reason</th>
+              <th className="py-3 px-6 text-left">Start Date</th>
+              <th className="py-3 px-6 text-left">End Date</th>
+              <th className="py-3 px-6 text-left">Duration</th>
+              <th className="py-3 px-6 text-left">Date Applied</th>
+              <th className="py-3 px-6 text-left">Approved</th>
+              <th className="py-3 px-6 text-left">Date Approved</th>
+              <th className="py-3 px-6 text-left">Remaining Days</th>
+              <th className="py-3 px-6 text-left"></th>
+            </tr>
+          </thead>
+          <tbody className="text-gray-600 text-sm font-light">
+            {personalLeaveList.map((leave) => (
+              <tr
+                className="border-b border-gray-200 hover:bg-gray-100"
+                key={leave.id}
               >
-                {leave.reason}
-              </h1>
-              <p>
-                Approved :{" "}
-                <span
-                  className={`${
-                    leave.approved === true
-                      ? "bg-green-600 px-2 text-zinc-50"
-                      : "bg-red-600 px-2 text-zinc-50"
-                  }`}
-                >
-                  {leave.approved === true ? "yes" : "no"}
-                </span>
-              </p>
-              <p>Duration {leave.duration}</p>
-              <p>Application Date: {leave.approvalDate.toGMTString()}</p>
-              <p>Approval Date: {leave.approvalDate.toGMTString()}</p>
-              <button onClick={() => deleteLeaveRequests(leave.id)}>
-                Delete
-              </button>
-              <input
-                type="text"
-                placeholder="new reason..."
-                onChange={(e) => setUpdatedReason(e.target.value)}
-              />
-              <button onClick={() => updateLeaveReason(leave.id)}>
-                Update Reason
-              </button>
-            </div>
-          ))}
+                <td className="py-3 px-6 text-left whitespace-nowrap">
+                  <h1
+                    className={`${
+                      leave.approved === true
+                        ? "text-green-600"
+                        : "text-red-600"
+                    }`}
+                  >
+                    {leave.reason}
+                  </h1>
+                </td>
 
-        {!isAdmin &&
-          personalLeaveList.map((leave) => (
-            <div
-              className="flex max-w-full overflow-auto bg-stone-100 mb-4 items-center justify-between p-4"
-              key={leave.id}
-            >
-              <h1
-                className={`${
-                  leave.approved === true ? "text-green-600" : "text-red-600"
-                } w-[20%] break-all`}
-              >
-                {leave.reason}
-              </h1>
-              <p className="w-[5%]">
-                <span
-                  className={`${
-                    leave.approved === true
-                      ? "bg-green-600 px-2 text-zinc-50"
-                      : "bg-red-600 px-2 text-zinc-50"
-                  }`}
-                >
-                  {leave.approved === true ? "yes" : "no"}
-                </span>
-              </p>
-              <p className="w-[5%]">{leave.duration}</p>
-              <p className="w-[15%]">{leave.approvalDate.toGMTString()}</p>
-            </div>
-          ))}
+                <td className="py-3 px-6 text-left whitespace-nowrap">
+                  <p>
+                    {(leave.startDate !== null || undefined || ""
+                      ? leave.startDate.toGMTString()
+                      : leave.startDate) || "N/A"}
+                  </p>
+                </td>
+
+                <td className="py-3 px-6 text-left whitespace-nowrap">
+                  <p>
+                    {(leave.endDate !== null || undefined || ""
+                      ? leave.endDate.toGMTString()
+                      : leave.endDate) || "N/A"}
+                  </p>
+                </td>
+                <td className="py-3 px-6 text-left whitespace-nowrap">
+                  <p>{leave.duration()} days</p>
+                </td>
+                <td className="py-3 px-6 text-left whitespace-nowrap">
+                  <p>
+                    {(leave.applicationDate !== null || undefined || ""
+                      ? leave.applicationDate.toGMTString()
+                      : leave.applicationDate) || "N/A"}
+                  </p>
+                </td>
+                <td className="py-3 px-6 text-left whitespace-nowrap">
+                  <span
+                    className={`${
+                      leave.approved === true
+                        ? "bg-green-600 px-2 text-zinc-50"
+                        : "bg-red-600 px-2 text-zinc-50"
+                    }`}
+                  >
+                    {leave.approved === true ? "yes" : "no"}
+                  </span>
+                </td>
+                <td className="py-3 px-6 text-left whitespace-nowrap">
+                  <p>
+                    {(leave.approvalDate !== null || undefined || ""
+                      ? leave.approvalDate.toGMTString()
+                      : leave.approvalDate) || "Not Approved"}
+                  </p>
+                </td>
+
+                <td className="py-3 px-6 text-left whitespace-nowrap">
+                  <p className="w-[200px]">{leave.daysLeft()}</p>
+                </td>
+                <td className="py-3 px-6 text-left whitespace-nowrap">
+                  <button className="flex items-center bg-red-600 p-2 text-zinc-50 border border-red-600 hover:bg-zinc-50 hover:text-red-600">
+                    <FontAwesomeIcon className="mr-2" icon={faCancel} />
+                    Cancel
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
     </div>
   );

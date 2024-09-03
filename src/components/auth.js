@@ -81,14 +81,6 @@ export const Auth = () => {
           userId: auth?.currentUser?.uid,
         });
 
-        await addDoc(notificationCollectionRef, {
-          message: `new login on ${currentDate}`,
-          created: serverTimestamp(),
-          read: false,
-          timeRead: null,
-          userId: auth?.currentUser?.uid,
-        });
-
         toast.success("Sign Up Success");
       }
     } catch (error) {
@@ -137,20 +129,19 @@ export const Auth = () => {
                 console.error(error);
               }
             }
-
-            try {
-              await addDoc(notificationCollectionRef, {
-                message: `new login on ${currentDate}`,
-                created: serverTimestamp(),
-                read: false,
-                timeRead: null,
-                userId: auth?.currentUser?.uid,
-              });
-            } catch (error) {
-              console.error(error);
-            }
             return toast.success("Sign In Success");
           }
+        }
+        try {
+          await addDoc(notificationCollectionRef, {
+            message: `new login on ${currentDate}`,
+            created: serverTimestamp(),
+            read: false,
+            timeRead: null,
+            userId: auth?.currentUser?.uid,
+          });
+        } catch (error) {
+          console.error(error);
         }
         return toast.success("Sign In Success");
       }
